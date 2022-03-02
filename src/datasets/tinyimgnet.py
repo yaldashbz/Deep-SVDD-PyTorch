@@ -1,10 +1,8 @@
-from PIL.Image import Image
-from torch.utils.data import Subset, Dataset
+from torch.utils.data import Dataset
 from torchvision.datasets import ImageFolder
-from torchvision.datasets.utils import check_integrity, download_url
 
 from base.torchvision_dataset import TorchvisionDataset
-from .preprocessing import get_target_label_idx, global_contrast_normalization
+from .preprocessing import global_contrast_normalization
 
 import os
 import torchvision.transforms as transforms
@@ -16,7 +14,7 @@ TEST_DIR = os.path.join(DATA_DIR, 'test')
 
 
 class TinyImgNet_Dataset(TorchvisionDataset):
-    def __init__(self, root: str, normal_class=5):
+    def __init__(self, root: str, normal_class=0):
         super().__init__(root)
 
         self.n_classes = 2  # 0: normal, 1: outlier
@@ -25,33 +23,29 @@ class TinyImgNet_Dataset(TorchvisionDataset):
         self.outlier_classes.remove(normal_class)
 
         # Pre-computed min and max values (after applying GCN) from train data per class
-        min_max = [(-28.94083453598571, 13.802961825439636),
-                   (-6.681770233365245, 9.158067708230273),
-                   (-34.924463588638204, 14.419298165027628),
-                   (-10.599172931391799, 11.093187820377565),
-                   (-11.945022995801637, 10.628045447867583),
-                   (-9.691969487694928, 8.948326776180823),
-                   (-9.174940012342555, 13.847014686472365),
-                   (-6.876682005899029, 12.282371383343161),
-                   (-15.603507135507172, 15.2464923804279),
-                   (-6.132882973622672, 8.046098172351265)]
+        min_max = [(-0.8826567065619495, 9.001545489292527),
+                   (-0.6661464580883915, 20.108062262467364),
+                   (-0.7820454743183202, 11.665100841080346),
+                   (-0.7645772083211267, 12.895051191467457),
+                   (-0.7253923114302238, 12.683235701611533),
+                   (-0.7698501867861425, 13.103278415430502),
+                   (-0.778418217980696, 10.457837397569108),
+                   (-0.7129780970522351, 12.057777597673047),
+                   (-0.8280402650205075, 10.581538445782988),
+                   (-0.7369959242164307, 10.697039838804978)]
 
-        # CIFAR-10 preprocessing: GCN (with L1 norm) and min-max feature scaling to [0,1]
+        # MNIST preprocessing: GCN (with L1 norm) and min-max feature scaling to [0,1]
         transform = transforms.Compose([transforms.ToTensor(),
                                         transforms.Grayscale(),
                                         transforms.Resize(28),
                                         transforms.Lambda(lambda x: global_contrast_normalization(x, scale='l1')),
-                                        transforms.Normalize([min_max[normal_class][0]] * 3,
-                                                             [min_max[normal_class][1] - min_max[normal_class][
-                                                                 0]] * 3)])
+                                        transforms.Normalize([min_max[normal_class][0]],
+                                                             [min_max[normal_class][1] - min_max[normal_class][0]])])
 
         target_transform = transforms.Lambda(lambda x: int(x in self.outlier_classes))
 
-        train_set = TinyImgNet(root=self.root, train=True, download=True,
-                               transform=transform, target_transform=target_transform)
-        # Subset train set to normal class
-        train_idx_normal = get_target_label_idx(train_set.train_labels, self.normal_classes)
-        self.train_set = Subset(train_set, train_idx_normal)
+        self.train_set = TinyImgNet(root=self.root, train=True, download=True,
+                                    transform=transform, target_transform=target_transform)
 
         self.test_set = TinyImgNet(root=self.root, train=False, download=True,
                                    transform=transform, target_transform=target_transform)
@@ -70,7 +64,7 @@ class TinyImgNet(Dataset):
         self.target_transform = target_transform
         self.train = train  # training set or test set
 
-        if download:
+        if download and not self._check_exists():
             self.download()
 
         if not self._check_exists():
@@ -79,16 +73,20 @@ class TinyImgNet(Dataset):
 
         # Create dictionary to store img filename (word 0) and corresponding
         # label (word 1) for every line in the txt file (as key value pair)
-        val_img_dir = os.path.join(VALID_DIR, 'images')
-        fp = open(os.path.join(VALID_DIR, 'val_annotations.txt'), 'r')
+        val_img_dir = os.path.join(self.root, VALID_DIR, 'images')
+        train_path = os.path.join(self.root, TRAIN_DIR)
+        test_path = os.path.join(self.root, TEST_DIR, 'images')
+
+        fp = open(os.path.join(self.root, VALID_DIR, 'val_annotations.txt'), 'r')
         data = fp.readlines()
         self._preprocess_load_data(data, val_img_dir)
         fp.close()
 
         if self.train:
-            self.train_data = ImageFolder(TRAIN_DIR, transform=transform)
+            self.train_data = ImageFolder(train_path, transform=transform)
+            self.val_data = ImageFolder(val_img_dir, transform=transform)
         else:
-            self.test_data = ImageFolder(TEST_DIR, transform=transform)
+            self.test_data = ImageFolder(test_path, transform=transform)
 
     def __getitem__(self, index):
         """
@@ -99,19 +97,9 @@ class TinyImgNet(Dataset):
             tuple: (image, target) where target is index of the target class.
         """
         if self.train:
-            img, target = self.train_data[index], self.train_labels[index]
+            img, target = self.train_data[index]
         else:
-            img, target = self.test_data[index], self.test_labels[index]
-
-        # doing this so that it is consistent with all other datasets
-        # to return a PIL Image
-        img = Image.fromarray(img.numpy(), mode='L')
-
-        if self.transform is not None:
-            img = self.transform(img)
-
-        if self.target_transform is not None:
-            target = self.target_transform(target)
+            img, target = self.test_data[index]
 
         return img, target, index  # only line changed
 
@@ -140,6 +128,10 @@ class TinyImgNet(Dataset):
                 os.rename(os.path.join(img_dir, img), os.path.join(newpath, img))
 
     def download(self):
-        import wget
+        import urllib
+        import zipfile
 
-        wget.download(self.url)
+        path = os.path.join(self.root, self.filename)
+        urllib.request.urlretrieve(self.url, path)
+        with zipfile.ZipFile(path, 'r') as zip_ref:
+            zip_ref.extractall(self.root)

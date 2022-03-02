@@ -171,7 +171,7 @@ def main(dataset_name, net_name, xp_path, data_path, load_config, load_model, ob
 
     if dataset_name in ('mnist', 'cifar10', 'tinyimgnet'):
 
-        if dataset_name == 'mnist':
+        if dataset_name in ['mnist', 'tinyimgnet']:
             X_normals = dataset.test_set.test_data[idx_sorted[:32], ...].unsqueeze(1)
             X_outliers = dataset.test_set.test_data[idx_sorted[-32:], ...].unsqueeze(1)
 
