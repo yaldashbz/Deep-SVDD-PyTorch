@@ -73,9 +73,6 @@ class TinyImgNet(Dataset):
         if download:
             self.download()
 
-        if download:
-            self.download()
-
         if not self._check_exists():
             raise RuntimeError('Dataset not found.' +
                                ' You can use download=True to download it')
@@ -125,8 +122,8 @@ class TinyImgNet(Dataset):
             return len(self.test_data)
 
     def _check_exists(self):
-        return os.path.exists(os.path.join(self.root, self.processed_folder, self.training_file)) and \
-               os.path.exists(os.path.join(self.root, self.processed_folder, self.test_file))
+        return os.path.exists(os.path.join(self.root, self.base_folder, 'train')) and \
+               os.path.exists(os.path.join(self.root, self.base_folder, 'test'))
 
     @classmethod
     def _preprocess_load_data(cls, data, img_dir):
