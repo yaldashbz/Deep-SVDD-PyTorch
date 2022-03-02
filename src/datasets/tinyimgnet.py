@@ -73,8 +73,11 @@ class TinyImgNet(Dataset):
         if download:
             self.download()
 
-        if not self._check_integrity():
-            raise RuntimeError('Dataset not found or corrupted.' +
+        if download:
+            self.download()
+
+        if not self._check_exists():
+            raise RuntimeError('Dataset not found.' +
                                ' You can use download=True to download it')
 
         # Create dictionary to store img filename (word 0) and corresponding
@@ -121,14 +124,9 @@ class TinyImgNet(Dataset):
         else:
             return len(self.test_data)
 
-    def _check_integrity(self):
-        root = self.root
-        for fentry in (self.train_list + self.test_list):
-            filename, md5 = fentry[0], fentry[1]
-            fpath = os.path.join(root, self.base_folder, filename)
-            if not check_integrity(fpath, md5):
-                return False
-        return True
+    def _check_exists(self):
+        return os.path.exists(os.path.join(self.root, self.processed_folder, self.training_file)) and \
+               os.path.exists(os.path.join(self.root, self.processed_folder, self.test_file))
 
     @classmethod
     def _preprocess_load_data(cls, data, img_dir):
@@ -145,19 +143,6 @@ class TinyImgNet(Dataset):
                 os.rename(os.path.join(img_dir, img), os.path.join(newpath, img))
 
     def download(self):
-        import tarfile
+        import wget
 
-        if self._check_integrity():
-            print('Files already downloaded and verified')
-            return
-
-        root = self.root
-        download_url(self.url, root, self.filename, self.tgz_md5)
-
-        # extract file
-        cwd = os.getcwd()
-        tar = tarfile.open(os.path.join(root, self.filename), "r:gz")
-        os.chdir(root)
-        tar.extractall()
-        tar.close()
-        os.chdir(cwd)
+        wget.download(self.url)
