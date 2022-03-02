@@ -1,9 +1,18 @@
-from torch.utils.data import Subset
-from torchvision.datasets import CIFAR10
+from PIL.Image import Image
+from torch.utils.data import Subset, Dataset
+from torchvision.datasets import ImageFolder
+from torchvision.datasets.utils import check_integrity, download_url
+
 from base.torchvision_dataset import TorchvisionDataset
 from .preprocessing import get_target_label_idx, global_contrast_normalization
 
+import os
 import torchvision.transforms as transforms
+
+DATA_DIR = 'tiny-imagenet-200'
+TRAIN_DIR = os.path.join(DATA_DIR, 'train')
+VALID_DIR = os.path.join(DATA_DIR, 'val')
+TEST_DIR = os.path.join(DATA_DIR, 'test')
 
 
 class TinyImgNet_Dataset(TorchvisionDataset):
@@ -29,7 +38,7 @@ class TinyImgNet_Dataset(TorchvisionDataset):
 
         # CIFAR-10 preprocessing: GCN (with L1 norm) and min-max feature scaling to [0,1]
         transform = transforms.Compose([transforms.ToTensor(),
-                                        transforms.Resize(32),
+                                        transforms.Resize(28),
                                         transforms.Lambda(lambda x: global_contrast_normalization(x, scale='l1')),
                                         transforms.Normalize([min_max[normal_class][0]] * 3,
                                                              [min_max[normal_class][1] - min_max[normal_class][
@@ -47,7 +56,107 @@ class TinyImgNet_Dataset(TorchvisionDataset):
                                    transform=transform, target_transform=target_transform)
 
 
-class TinyImgNet(CIFAR10):
+class TinyImgNet(Dataset):
     base_folder = 'tiny-imagenet-200'
     url = 'http://cs231n.stanford.edu/tiny-imagenet-200.zip'
     filename = 'tiny-imagenet-200.zip'
+
+    def __init__(self, root, train=True,
+                 transform=None, target_transform=None,
+                 download=False):
+        self.root = os.path.expanduser(root)
+        self.transform = transform
+        self.target_transform = target_transform
+        self.train = train  # training set or test set
+
+        if download:
+            self.download()
+
+        if not self._check_integrity():
+            raise RuntimeError('Dataset not found or corrupted.' +
+                               ' You can use download=True to download it')
+
+        # Create dictionary to store img filename (word 0) and corresponding
+        # label (word 1) for every line in the txt file (as key value pair)
+        val_img_dir = os.path.join(VALID_DIR, 'images')
+        fp = open(os.path.join(VALID_DIR, 'val_annotations.txt'), 'r')
+        data = fp.readlines()
+        self._preprocess_load_data(data, val_img_dir)
+        fp.close()
+
+        if self.train:
+            self.train_data = ImageFolder(TRAIN_DIR, transform=transform)
+        else:
+            self.test_data = ImageFolder(TEST_DIR, transform=transform)
+
+    def __getitem__(self, index):
+        """
+        Args:
+            index (int): Index
+
+        Returns:
+            tuple: (image, target) where target is index of the target class.
+        """
+        if self.train:
+            img, target = self.train_data[index], self.train_labels[index]
+        else:
+            img, target = self.test_data[index], self.test_labels[index]
+
+        # doing this so that it is consistent with all other datasets
+        # to return a PIL Image
+        img = Image.fromarray(img.numpy(), mode='L')
+
+        if self.transform is not None:
+            img = self.transform(img)
+
+        if self.target_transform is not None:
+            target = self.target_transform(target)
+
+        return img, target, index  # only line changed
+
+    def __len__(self):
+        if self.train:
+            return len(self.train_data)
+        else:
+            return len(self.test_data)
+
+    def _check_integrity(self):
+        root = self.root
+        for fentry in (self.train_list + self.test_list):
+            filename, md5 = fentry[0], fentry[1]
+            fpath = os.path.join(root, self.base_folder, filename)
+            if not check_integrity(fpath, md5):
+                return False
+        return True
+
+    @classmethod
+    def _preprocess_load_data(cls, data, img_dir):
+        img_dict = {}
+        for line in data:
+            words = line.split('\t')
+            img_dict[words[0]] = words[1]
+
+        for img, folder in img_dict.items():
+            newpath = (os.path.join(img_dir, folder))
+            if not os.path.exists(newpath):
+                os.makedirs(newpath)
+            if os.path.exists(os.path.join(img_dir, img)):
+                os.rename(os.path.join(img_dir, img), os.path.join(newpath, img))
+
+    def download(self):
+        import tarfile
+
+        if self._check_integrity():
+            print('Files already downloaded and verified')
+            return
+
+        root = self.root
+        download_url(self.url, root, self.filename, self.tgz_md5)
+
+        # extract file
+        cwd = os.getcwd()
+        tar = tarfile.open(os.path.join(root, self.filename), "r:gz")
+        os.chdir(root)
+        tar.extractall()
+        tar.close()
+        os.chdir(cwd)
