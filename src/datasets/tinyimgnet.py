@@ -84,9 +84,8 @@ class TinyImgNet(Dataset):
 
         if self.train:
             self.train_data = ImageFolder(train_path, transform=transform)
-            self.val_data = ImageFolder(val_img_dir, transform=transform)
         else:
-            self.test_data = ImageFolder(test_path, transform=transform)
+            self.test_data = ImageFolder(val_img_dir, transform=transform)
 
     def __getitem__(self, index):
         """
