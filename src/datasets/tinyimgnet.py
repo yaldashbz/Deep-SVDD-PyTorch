@@ -84,23 +84,18 @@ class TinyImgNet(Dataset):
 
         if self.train:
             self.train_data = ImageFolder(train_path, transform=transform)
+            self.train_label = self.train_data.classes
         else:
             self.test_data = ImageFolder(val_img_dir, transform=transform)
+            self.test_label = self.test_data.classes
 
     def __getitem__(self, index):
-        """
-        Args:
-            index (int): Index
-
-        Returns:
-            tuple: (image, target) where target is index of the target class.
-        """
         if self.train:
-            img, target = self.train_data[index]
+            img, target = self.train_data[index], self.train_data.classes[index]
         else:
-            img, target = self.test_data[index]
+            img, target = self.test_data[index], self.test_data.classes[index]
 
-        return img, target, index  # only line changed
+        return img, target, index
 
     def __len__(self):
         if self.train:
