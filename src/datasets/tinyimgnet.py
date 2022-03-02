@@ -38,6 +38,7 @@ class TinyImgNet_Dataset(TorchvisionDataset):
 
         # CIFAR-10 preprocessing: GCN (with L1 norm) and min-max feature scaling to [0,1]
         transform = transforms.Compose([transforms.ToTensor(),
+                                        transforms.Grayscale(),
                                         transforms.Resize(28),
                                         transforms.Lambda(lambda x: global_contrast_normalization(x, scale='l1')),
                                         transforms.Normalize([min_max[normal_class][0]] * 3,
