@@ -1,3 +1,4 @@
+from PIL import Image
 from torch.utils.data import Subset
 from torchvision.datasets import CIFAR10
 from base.torchvision_dataset import TorchvisionDataset
@@ -65,4 +66,19 @@ class MyCIFAR10(CIFAR10):
         return self.data
 
     def __getitem__(self, index):
-        return super().__getitem__(index), index
+        if self.train:
+            img, target = self.train_data[index], self.train_labels[index]
+        else:
+            img, target = self.test_data[index], self.test_labels[index]
+
+        # doing this so that it is consistent with all other datasets
+        # to return a PIL Image
+        img = Image.fromarray(img)
+
+        if self.transform is not None:
+            img = self.transform(img)
+
+        if self.target_transform is not None:
+            target = self.target_transform(target)
+
+        return img, target, index
