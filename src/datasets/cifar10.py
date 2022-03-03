@@ -1,5 +1,4 @@
 from torch.utils.data import Subset
-from PIL import Image
 from torchvision.datasets import CIFAR10
 from base.torchvision_dataset import TorchvisionDataset
 from .preprocessing import get_target_label_idx, global_contrast_normalization
@@ -48,31 +47,22 @@ class CIFAR10_Dataset(TorchvisionDataset):
 
 
 class MyCIFAR10(CIFAR10):
-    """Torchvision CIFAR10 class with patch of __getitem__ method to also return the index of a data sample."""
 
-    def __init__(self, *args, **kwargs):
-        super(MyCIFAR10, self).__init__(*args, **kwargs)
+    @property
+    def train_labels(self):
+        return self.targets
+
+    @property
+    def test_labels(self):
+        return self.targets
+
+    @property
+    def train_data(self):
+        return self.data
+
+    @property
+    def test_data(self):
+        return self.data
 
     def __getitem__(self, index):
-        """Override the original method of the CIFAR10 class.
-        Args:
-            index (int): Index
-        Returns:
-            triple: (image, target, index) where target is index of the target class.
-        """
-        if self.train:
-            img, target = self.train_data[index], self.train_labels[index]
-        else:
-            img, target = self.test_data[index], self.test_labels[index]
-
-        # doing this so that it is consistent with all other datasets
-        # to return a PIL Image
-        img = Image.fromarray(img)
-
-        if self.transform is not None:
-            img = self.transform(img)
-
-        if self.target_transform is not None:
-            target = self.target_transform(target)
-
-        return img, target, index  # only line changed
+        return super().__getitem__(index), index
