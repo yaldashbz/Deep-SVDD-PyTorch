@@ -1,16 +1,19 @@
+from PIL import Image
 from torch.utils.data import Dataset
-from torchvision.datasets import ImageFolder
 
 from base.torchvision_dataset import TorchvisionDataset
 from .preprocessing import global_contrast_normalization
 
 import os
+import torch
+import numpy as np
 import torchvision.transforms as transforms
 
 DATA_DIR = 'tiny-imagenet-200'
 TRAIN_DIR = os.path.join(DATA_DIR, 'train')
 VALID_DIR = os.path.join(DATA_DIR, 'val')
 TEST_DIR = os.path.join(DATA_DIR, 'test')
+MAX_CLASSES = 20
 
 
 class TinyImgNet_Dataset(TorchvisionDataset):
@@ -36,7 +39,6 @@ class TinyImgNet_Dataset(TorchvisionDataset):
 
         # MNIST preprocessing: GCN (with L1 norm) and min-max feature scaling to [0,1]
         transform = transforms.Compose([transforms.ToTensor(),
-                                        transforms.Grayscale(),
                                         transforms.Resize(28),
                                         transforms.Lambda(lambda x: global_contrast_normalization(x, scale='l1')),
                                         transforms.Normalize([min_max[normal_class][0]],
@@ -71,29 +73,38 @@ class TinyImgNet(Dataset):
             raise RuntimeError('Dataset not found.' +
                                ' You can use download=True to download it')
 
+        wp = open(os.path.join(self.root, DATA_DIR, 'wnids.txt'), 'r')
+        self.wnids = list(map(lambda w: w[:-1], wp.readlines()))
+
         # Create dictionary to store img filename (word 0) and corresponding
         # label (word 1) for every line in the txt file (as key value pair)
-        val_img_dir = os.path.join(self.root, VALID_DIR, 'images')
+        val_path = os.path.join(self.root, VALID_DIR, 'images')
         train_path = os.path.join(self.root, TRAIN_DIR)
-        test_path = os.path.join(self.root, TEST_DIR, 'images')
 
         fp = open(os.path.join(self.root, VALID_DIR, 'val_annotations.txt'), 'r')
         data = fp.readlines()
-        self._preprocess_load_data(data, val_img_dir)
+        self._preprocess_load_data(data, val_path)
         fp.close()
 
         if self.train:
-            self.train_data = ImageFolder(train_path, transform=transform)
-            self.train_label = self.train_data.classes
+            self.train_data, self.train_label = self._load_data(train_path, transform=transform, train=True)
         else:
-            self.test_data = ImageFolder(val_img_dir, transform=transform)
-            self.test_label = self.test_data.classes
+            # use val instead of test
+            self.test_data, self.test_label = self._load_data(val_path, transform=transform, train=False)
 
     def __getitem__(self, index):
         if self.train:
-            img, target = self.train_data[index], self.train_data.classes[index]
+            img, target = self.train_data[index], self.train_label[index]
         else:
-            img, target = self.test_data[index], self.test_data.classes[index]
+            img, target = self.test_data[index], self.test_label[index]
+
+        img = Image.fromarray(img.numpy(), mode='L')
+
+        if self.transform is not None:
+            img = self.transform(img)
+
+        if self.target_transform is not None:
+            target = self.target_transform(target)
 
         return img, target, index
 
@@ -106,6 +117,32 @@ class TinyImgNet(Dataset):
     def _check_exists(self):
         return os.path.exists(os.path.join(self.root, self.base_folder, 'train')) and \
                os.path.exists(os.path.join(self.root, self.base_folder, 'test'))
+
+    def _load_data(self, path, transform, train: bool = True, max_classes=20):
+        data = []
+        labels = []
+        cls_directories = os.listdir(path)
+        np.random.shuffle(cls_directories)
+        cls_directories = cls_directories[:max_classes]
+
+        for cls_dir in cls_directories:
+            cls_path = os.path.join(path, cls_dir)
+            if train:
+                cls_path = os.path.join(cls_path, 'images')
+            for img_file in os.listdir(cls_path):
+                if img_file.endswith('.JPEG'):
+                    img_path = os.path.join(cls_path, img_file)
+                    img = Image.open(os.path.join(img_path))
+                    if transforms.ToTensor()(img).size()[0] == 3:
+                        img = transforms.Grayscale()(img)
+                    img = transform(img)
+                    img = img.reshape(28, 28)
+                    data.append(img)
+                    labels.append(self._class_to_idx(cls_dir))
+        return torch.stack(data), torch.tensor(labels)
+
+    def _class_to_idx(self, class_name):
+        return self.wnids.index(class_name)
 
     @classmethod
     def _preprocess_load_data(cls, data, img_dir):
